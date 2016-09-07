@@ -1,0 +1,53 @@
+---
+- hosts: localhost
+  sudo: yes
+  vars:
+    MySQL_root_pass: DRUP@l
+  tasks:
+
+    - name: Install Packages
+      apt: name={{item}} update_cache=yes state=present
+      with_items: 
+        - apache2
+        - libapache2-mod-php5
+        - php5
+        - php5-mcrypt
+        - php5-gd
+        - php5-curl
+        - libssh2-php
+    
+    - name: enabled mod_rewrite
+      apache2_module: name=rewrite state=present
+      notify:
+        - restart apache2
+        
+    - name: Set MySQL root password before installing
+      debconf: name='mysql-server' question='mysql-server/root_password' value='{{MySQL_root_pass | quote}}' vtype='password'
+
+    - name: Confirm MySQL root password before installing
+      debconf: name='mysql-server' question='mysql-server/root_password_again' value='{{MySQL_root_pass | quote}}' vtype='password'
+    
+    - name: Install MySQL
+      apt: package={{ item }} state=installed force=yes update_cache=yes cache_valid_time=3600
+      with_items:
+        - mysql-server
+        - python-mysqldb
+        - php5-mysql
+    
+    - name: Deletes anonymous MySQL server user for localhost
+      mysql_user: login_user=root login_password='{{ MySQL_root_pass }}' user="" state="absent"
+    
+    - name: Secures the MySQL root user
+      mysql_user: user="root" password="{{ MySQL_root_pass }}" host="{{ item }}" login_password="{{ MySQL_root_pass }}" login_user=root
+      with_items:
+        - 127.0.0.1
+        - localhost
+        - ::1
+        - "{{ ansible_fqdn }}"
+    
+    - name: Removes the MySQL test database
+      mysql_db: db=test state=absent login_password="{{ MySQL_root_pass }}" login_user=root
+  
+  handlers:
+    - name: restart apache2
+      service: name=apache2 state=restarted 
